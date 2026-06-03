@@ -127,17 +127,19 @@ describe("TextCmake — extract", () => {
 });
 
 describe("TextCmake — framework integration", () => {
-    it("renders extracted hierarchy via format()", () => {
+    it("renders extracted hierarchy via format()", async () => {
         const h = new TextCmake(metadata);
-        const out = h.symbolsRaw("project(Hello)");
+        const out = await h.symbolsRaw("project(Hello)");
         assert.ok(out.includes("module Hello"));
     });
 
-    it("inherits jsonpath query against the symbol outline", async () => {
+    it("jsonpath dispatches against the deep-json ANTLR parse tree (issue #10)", async () => {
+        // Every ANTLR deep tree has a root with a `type` field — verify
+        // jsonpath reaches it via the deep-channel dispatch.
         const h = new TextCmake(metadata);
-        const src = "add_executable(my_app main.cpp)";
-        const e = await h.query(src, "jsonpath", "$.my_app");
-        assert.equal(e.length, 1);
+        const roots = await h.query("class Probe {}", "jsonpath", "$.type");
+        assert.equal(roots.length, 1);
+        assert.equal(typeof roots[0].matched, "string");
     });
 });
 
