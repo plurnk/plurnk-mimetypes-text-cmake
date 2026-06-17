@@ -86,6 +86,25 @@ class TextCmakeVisitor extends withExtractor(CMakeVisitor) {
             case "option":
                 if (firstArg) this.emit("variable", firstArg, ctx);
                 return null;
+            case "target_link_libraries":
+            case "add_dependencies": {
+                // The build dependency graph: first arg is the target, the rest
+                // are the targets/libraries it links/depends on. Each is a `use`
+                // edge sourced at the first-arg target (its add_library /
+                // add_executable def). Visibility keywords (PUBLIC/PRIVATE/…)
+                // are not targets; namespaced externals (Boost::system) simply
+                // never name-join — dead rows, not noise.
+                const args = singleArguments(ctx);
+                if (args.length < 2) return null;
+                const target = stripQuotes(args[0].text);
+                for (let i = 1; i < args.length; i += 1) {
+                    const lib = stripQuotes(args[i].text);
+                    if (lib.length === 0) continue;
+                    if (cmd === "target_link_libraries" && LINK_KEYWORDS.has(lib.toUpperCase())) continue;
+                    this.addRef("use", lib, args[i].ctx as never, { container: target });
+                }
+                return null;
+            }
             default:
                 return null;
         }
@@ -97,6 +116,23 @@ class TextCmakeVisitor extends withExtractor(CMakeVisitor) {
         this.#emittedKeys.add(key);
         this.addSymbol(kind, name, ctx);
     }
+}
+
+// target_link_libraries scope/keyword tokens that introduce libraries but are
+// not themselves targets.
+const LINK_KEYWORDS: ReadonlySet<string> = new Set([
+    "PUBLIC", "PRIVATE", "INTERFACE",
+    "LINK_PUBLIC", "LINK_PRIVATE", "LINK_INTERFACE_LIBRARIES",
+    "DEBUG", "OPTIMIZED", "GENERAL",
+]);
+
+// All single_argument contexts of a command, in document order, with their text
+// and the context (for ref positions).
+function singleArguments(ctx: unknown): Array<{ text: string; ctx: unknown }> {
+    const node = ctx as { single_argument?: () => Array<unknown> | unknown };
+    const raw = node.single_argument?.();
+    const arr = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    return arr.map((a) => ({ text: (a as { getText?: () => string }).getText?.() ?? "", ctx: a }));
 }
 
 // command_invocation: Identifier '(' (single_argument | compound_argument)* ')'
